@@ -37,7 +37,7 @@ navigator.geolocation.getCurrentPosition(async (pos) => {
   L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Kamu");
 
   // Fetch ke backend
-  const res = await fetch(`../api/nearby?lat=${lat}&lon=${lon}`);
+  const res = await fetch(`./api/nearby?lat=${lat}&lon=${lon}`);
   const data = await res.json();
 
   let listHTML = "";

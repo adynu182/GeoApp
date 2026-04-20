@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     const result = await pool.query(`
       SELECT *,
       ST_AsGeoJSON(geometry) as geojson
-      FROM wilayah_kelurahan
+      FROM pulau_jawa
       WHERE ST_DWithin(
         geometry::geography,
         ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Peta Wilayah</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body { margin:0; font-family: Arial; }
+    #map { height: 60vh; }
+    #list { padding:10px; }
+  </style>
+</head>
+<body>
+
+<h3 style="padding:10px;">📍 Wilayah Sekitar Kamu</h3>
+<div id="map"></div>
+<div id="list"></div>
+
+<script>
+const map = L.map('map').setView([-6.2, 106.8], 12);
+
+// Tile OSM
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// Ambil lokasi user
+navigator.geolocation.getCurrentPosition(async (pos) => {
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+
+  map.setView([lat, lon], 14);
+
+  // Marker user
+  L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Kamu");
+
+  // Fetch ke backend
+  const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
+  const data = await res.json();
+
+  let listHTML = "";
+
+  data.forEach(item => {
+    const geo = JSON.parse(item.geojson);
+
+    // Tampilkan polygon
+    L.geoJSON(geo).addTo(map);
+
+    listHTML += `
+      <div>
+        <b>${item.nama_kel}</b><br/>
+        ${item.nama_kec} - ${item.nama_kab}
+        <hr/>
+      </div>
+    `;
+  });
+
+  document.getElementById("list").innerHTML = listHTML;
+
+});
+</script>
+
+</body>
+</html>

@@ -43,15 +43,18 @@ navigator.geolocation.getCurrentPosition(async (pos) => {
   let listHTML = "";
 
   data.forEach(item => {
-    L.geoJSON(item.geometry).addTo(map);
-
-    listHTML += `
-      <div>
-        <b>${item.nama_kel}</b><br/>
-        ${item.nama_kec} - ${item.nama_kab}
-        <hr/>
-      </div>
-    `;
+    const layer = L.geoJSON(item.geometry, {
+      style: {
+        color: "red",
+        fillOpacity: 0.3
+      }
+    }).addTo(map);
+    
+    layer.bindPopup(`
+      <b>${item.nama_kel}</b><br/>
+      ${item.nama_kec}<br/>
+      ${item.nama_kab}
+    `);
   });
 
   document.getElementById("list").innerHTML = listHTML;

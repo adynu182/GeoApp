@@ -10,8 +10,11 @@ export default async function handler(req, res) {
 
   try {
     const result = await pool.query(`
-      SELECT *,
-      ST_AsGeoJSON(geometry) as geojson
+      SELECT 
+        nama_kel,
+        nama_kec,
+        nama_kab,
+        ST_AsGeoJSON(ST_Transform(geometry, 4326))::json as geometry
       FROM pulau_jawa
       WHERE ST_DWithin(
         geometry::geography,

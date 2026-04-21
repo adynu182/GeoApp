@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Peta Wilayah</title>
+  <title>Peta Wilayah Sekitar</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
@@ -10,56 +10,119 @@
 
   <style>
     body { margin:0; font-family: Arial; }
-    #map { height: 60vh; }
-    #list { padding:10px; }
+    #map { height: 70vh; }
+    #controls {
+      padding: 10px;
+      background: #f5f5f5;
+    }
+    select, button {
+      padding: 8px;
+      margin-right: 10px;
+    }
   </style>
 </head>
 <body>
 
-<h3 style="padding:10px;">📍 Wilayah Sekitar Kamu</h3>
+<div id="controls">
+  Radius:
+  <select id="radius">
+    <option value="1000">1 KM</option>
+    <option value="3000">3 KM</option>
+    <option value="5000" selected>5 KM</option>
+    <option value="10000">10 KM</option>
+  </select>
+
+  <button onclick="loadData()">🔍 Cari</button>
+</div>
+
 <div id="map"></div>
-<div id="list"></div>
 
 <script>
 const map = L.map('map').setView([-6.2, 106.8], 12);
 
-// Tile OSM
+// base map
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// Ambil lokasi user
-navigator.geolocation.getCurrentPosition(async (pos) => {
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
+let userMarker;
+let geoLayer;
 
-  map.setView([lat, lon], 14);
+// ambil lokasi user
+navigator.geolocation.getCurrentPosition((pos) => {
+  window.userLat = pos.coords.latitude;
+  window.userLon = pos.coords.longitude;
 
-  // Marker user
-  L.marker([lat, lon]).addTo(map).bindPopup("Lokasi Kamu");
+  map.setView([userLat, userLon], 14);
 
-  // Fetch ke backend
-  const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
-  const data = await res.json();
-  console.log("DATA:", data);
-  let listHTML = "";
+  userMarker = L.marker([userLat, userLon])
+    .addTo(map)
+    .bindPopup("📍 Lokasi Kamu")
+    .openPopup();
 
-  data.forEach(item => {
-    const layer = L.geoJSON(item.geometry, {
-      style: {
-        color: "red",
-        fillOpacity: 0.3
-      }
-    }).addTo(map);
-    
-    layer.bindPopup(`
-      <b>${item.nama_kel}</b><br/>
-      ${item.nama_kec}<br/>
-      ${item.nama_kab}
-    `);
-  });
-
-  document.getElementById("list").innerHTML = listHTML;
-
+  loadData(); // auto load pertama
 });
+
+// fungsi load data
+async function loadData() {
+  const radius = document.getElementById("radius").value;
+
+  if (!window.userLat) {
+    alert("Lokasi belum tersedia");
+    return;
+  }
+
+  // hapus layer lama
+  if (geoLayer) {
+    map.removeLayer(geoLayer);
+  }
+
+  try {
+    const res = await fetch(`/api/nearby?lat=${userLat}&lon=${userLon}&radius=${radius}`);
+    const data = await res.json();
+
+    geoLayer = L.layerGroup();
+
+    data.forEach(item => {
+      const layer = L.geoJSON(item.geometry, {
+        style: {
+          color: "blue",
+          weight: 2,
+          fillColor: "orange",
+          fillOpacity: 0.4
+        }
+      });
+
+      // popup saat klik
+      layer.bindPopup(`
+        <b>${item.nama_kel}</b><br/>
+        Kecamatan: ${item.nama_kec}<br/>
+        Kota: ${item.nama_kab}
+      `);
+
+      // hover effect
+      layer.on({
+        mouseover: function (e) {
+          e.target.setStyle({ fillOpacity: 0.7 });
+        },
+        mouseout: function (e) {
+          e.target.setStyle({ fillOpacity: 0.4 });
+        }
+      });
+
+      geoLayer.addLayer(layer);
+    });
+
+    geoLayer.addTo(map);
+
+    // auto zoom ke semua polygon
+    if (geoLayer.getLayers().length > 0) {
+      map.fitBounds(geoLayer.getBounds());
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert("Gagal load data");
+  }
+}
 </script>
 
 </body>

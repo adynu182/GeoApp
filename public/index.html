@@ -4,35 +4,62 @@
   <title>Peta Wilayah Sekitar</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family: Arial; }
-    #map { height: 70vh; }
+    body { margin:0; font-family: Arial; display:flex; height:100vh; }
+
+    #sidebar {
+      width: 300px;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+      background: #fafafa;
+    }
+
+    #map {
+      flex: 1;
+    }
+
     #controls {
       padding: 10px;
-      background: #f5f5f5;
+      border-bottom: 1px solid #ccc;
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
     }
-    select, button {
-      padding: 8px;
-      margin-right: 10px;
+
+    .item {
+      padding: 10px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+
+    .item:hover {
+      background: #e3f2fd;
+    }
+
+    .active {
+      background: #bbdefb !important;
     }
   </style>
 </head>
 <body>
 
-<div id="controls">
-  Radius:
-  <select id="radius">
-    <option value="1000">1 KM</option>
-    <option value="3000">3 KM</option>
-    <option value="5000" selected>5 KM</option>
-    <option value="10000">10 KM</option>
-  </select>
+<div id="sidebar">
+  <div id="controls">
+    Radius:
+    <select id="radius">
+      <option value="1000">1 KM</option>
+      <option value="3000">3 KM</option>
+      <option value="5000" selected>5 KM</option>
+      <option value="10000">10 KM</option>
+    </select>
+    <button onclick="loadData()">🔍</button>
+  </div>
 
-  <button onclick="loadData()">🔍 Cari</button>
+  <div id="list"></div>
 </div>
 
 <div id="map"></div>
@@ -40,16 +67,18 @@
 <script>
 const map = L.map('map').setView([-6.2, 106.8], 12);
 
-// base map
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+let userLat, userLon;
 let userMarker;
 let geoLayer;
+let layerMap = {}; // simpan reference polygon
+let activeLayer = null;
 
-// ambil lokasi user
+// 📍 ambil lokasi
 navigator.geolocation.getCurrentPosition((pos) => {
-  window.userLat = pos.coords.latitude;
-  window.userLon = pos.coords.longitude;
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
 
   map.setView([userLat, userLon], 14);
 
@@ -58,70 +87,122 @@ navigator.geolocation.getCurrentPosition((pos) => {
     .bindPopup("📍 Lokasi Kamu")
     .openPopup();
 
-  loadData(); // auto load pertama
+  loadData();
 });
 
-// fungsi load data
+// 📏 hitung jarak (km)
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+// 🚀 load data
 async function loadData() {
   const radius = document.getElementById("radius").value;
 
-  if (!window.userLat) {
-    alert("Lokasi belum tersedia");
-    return;
-  }
+  if (!userLat) return alert("Lokasi belum siap");
 
-  // hapus layer lama
-  if (geoLayer) {
-    map.removeLayer(geoLayer);
-  }
+  if (geoLayer) map.removeLayer(geoLayer);
 
   try {
     const res = await fetch(`/api/nearby?lat=${userLat}&lon=${userLon}&radius=${radius}`);
     const data = await res.json();
 
-    geoLayer = L.featureGroup();
+    if (!Array.isArray(data)) {
+      alert("API Error");
+      return;
+    }
 
-    data.forEach(item => {
+    geoLayer = L.featureGroup();
+    layerMap = {};
+
+    let listHTML = "";
+
+    data.forEach((item, i) => {
+
       const layer = L.geoJSON(item.geometry, {
         style: {
-          color: "blue",
+          color: "#1976d2",
           weight: 2,
-          fillColor: "orange",
-          fillOpacity: 0.4
+          fillOpacity: 0.3
         }
       });
 
-      // popup saat klik
+      // centroid untuk jarak
+      const center = layer.getBounds().getCenter();
+      const distance = getDistance(userLat, userLon, center.lat, center.lng).toFixed(2);
+
+      // popup
       layer.bindPopup(`
         <b>${item.nama_kel}</b><br/>
-        Kecamatan: ${item.nama_kec}<br/>
-        Kota: ${item.nama_kab}
+        ${item.nama_kec}<br/>
+        ${item.nama_kab}<br/>
+        📏 ${distance} KM
       `);
 
-      // hover effect
+      // hover
       layer.on({
-        mouseover: function (e) {
-          e.target.setStyle({ fillOpacity: 0.7 });
-        },
-        mouseout: function (e) {
-          e.target.setStyle({ fillOpacity: 0.4 });
-        }
+        mouseover: e => e.target.setStyle({ fillOpacity: 0.6 }),
+        mouseout: e => e.target.setStyle({ fillOpacity: 0.3 }),
+        click: () => selectItem(i)
       });
 
       geoLayer.addLayer(layer);
+      layerMap[i] = layer;
+
+      // list
+      listHTML += `
+        <div class="item" onclick="selectItem(${i})" id="item-${i}">
+          <b>${item.nama_kel}</b><br/>
+          ${item.nama_kec}<br/>
+          <small>📏 ${distance} KM</small>
+        </div>
+      `;
     });
+
+    document.getElementById("list").innerHTML = listHTML;
 
     geoLayer.addTo(map);
 
-    // auto zoom ke semua polygon
     if (geoLayer.getLayers().length > 0) {
       map.fitBounds(geoLayer.getBounds());
     }
 
   } catch (err) {
     console.error(err);
-    alert("Gagal load data");
+    alert("Gagal Load Data");
   }
+}
+
+// 🎯 pilih item (sync map + list)
+function selectItem(i) {
+  const layer = layerMap[i];
+
+  if (!layer) return;
+
+  // reset sebelumnya
+  if (activeLayer) {
+    activeLayer.setStyle({ fillOpacity: 0.3 });
+  }
+
+  document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
+
+  // set baru
+  layer.setStyle({ fillOpacity: 0.7 });
+  layer.openPopup();
+  map.fitBounds(layer.getBounds());
+
+  document.getElementById(`item-${i}`).classList.add("active");
+
+  activeLayer = layer;
 }
 </script>
 

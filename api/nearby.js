@@ -29,4 +29,6 @@ export default async function handler(req, res) {
     LIMIT 100;
   `, [parseFloat(lon), parseFloat(lat), parseFloat(radius)]);
   }
+  console.error("ERROR DETAIL:", err.message);
+  return res.status(500).json({ error: err.message });
 }

@@ -39,7 +39,7 @@ navigator.geolocation.getCurrentPosition(async (pos) => {
   // Fetch ke backend
   const res = await fetch(`/api/nearby?lat=${lat}&lon=${lon}`);
   const data = await res.json();
-
+  console.log("DATA:", data);
   let listHTML = "";
 
   data.forEach(item => {

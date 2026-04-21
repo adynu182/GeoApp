@@ -1,8 +1,6 @@
 import pg from "pg";
-
 const { Pool } = pg;
 
-//paksa ignore SSL global
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const pool = new Pool({
@@ -13,22 +11,30 @@ export default async function handler(req, res) {
   const { lat, lon, radius = 5000 } = req.query;
 
   try {
-  const result = await pool.query(`
-    SELECT 
-      nama_kel,
-      nama_kec,
-      nama_kab,
-      ST_AsGeoJSON(geometry)::json as geometry
-    FROM pulau_jawa
-    WHERE geometry IS NOT NULL
-    AND ST_DWithin(
-      geometry::geography,
-      ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-      $3::double precision
-    )
-    LIMIT 100;
-  `, [parseFloat(lon), parseFloat(lat), parseFloat(radius)]);
+    const result = await pool.query(`
+      SELECT 
+        nama_kel,
+        nama_kec,
+        nama_kab,
+        ST_AsGeoJSON(geometry)::json as geometry
+      FROM pulau_jawa
+      WHERE geometry IS NOT NULL
+      AND ST_DWithin(
+        ST_Centroid(geometry)::geography,
+        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        $3
+      )
+      LIMIT 100;
+    `, [
+      parseFloat(lon),
+      parseFloat(lat),
+      parseFloat(radius)
+    ]);
+
+    res.status(200).json(result.rows);
+
+  } catch (err) {
+    console.error("ERROR DETAIL:", err.message);
+    res.status(500).json({ error: err.message });
   }
-  console.error("ERROR DETAIL:", err.message);
-  return res.status(500).json({ error: err.message });
 }

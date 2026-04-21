@@ -13,22 +13,20 @@ export default async function handler(req, res) {
   const { lat, lon, radius = 5000 } = req.query;
 
   try {
-    const result = await pool.query(`
-      SELECT 
-        nama_kel,
-        nama_kec,
-        nama_kab,
-        ST_AsGeoJSON(geometry)::json as geometry
-      FROM pulau_jawa WHERE ST_DWithin(
+  const result = await pool.query(`
+    SELECT 
+      nama_kel,
+      nama_kec,
+      nama_kab,
+      ST_AsGeoJSON(geometry)::json as geometry
+    FROM pulau_jawa
+    WHERE geometry IS NOT NULL
+    AND ST_DWithin(
       geometry::geography,
       ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-      $3
-      )
-    `);
-
-    res.status(200).json(result.rows);
-  } catch (err) {
-    console.error("ERROR:", err);
-    res.status(500).json({ error: err.message });
+      $3::double precision
+    )
+    LIMIT 100;
+  `, [parseFloat(lon), parseFloat(lat), parseFloat(radius)]);
   }
 }

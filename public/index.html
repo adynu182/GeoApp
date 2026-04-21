@@ -4,49 +4,16 @@
   <title>Peta Wilayah Sekitar</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  <style>
-    body { margin:0; font-family: Arial; display:flex; height:100vh; }
-
-    #sidebar {
-      width: 300px;
-      overflow-y: auto;
-      border-right: 1px solid #ccc;
-      background: #fafafa;
-    }
-
-    #map {
-      flex: 1;
-    }
-
-    #controls {
-      padding: 10px;
-      border-bottom: 1px solid #ccc;
-      background: #fff;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-
-    .item {
-      padding: 10px;
-      cursor: pointer;
-      border-bottom: 1px solid #eee;
-    }
-
-    .item:hover {
-      background: #e3f2fd;
-    }
-
-    .active {
-      background: #bbdefb !important;
-    }
-  </style>
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<!-- Sidebar -->
 <div id="sidebar">
   <div id="controls">
     Radius:
@@ -62,6 +29,10 @@
   <div id="list"></div>
 </div>
 
+<!-- Toggle (mobile) -->
+<div id="toggleBtn" onclick="toggleSidebar()">⬆️ List</div>
+
+<!-- Map -->
 <div id="map"></div>
 
 <script>
@@ -72,10 +43,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 let userLat, userLon;
 let userMarker;
 let geoLayer;
-let layerMap = {}; // simpan reference polygon
+let layerMap = {};
 let activeLayer = null;
 
-// 📍 ambil lokasi
+// ambil lokasi user
 navigator.geolocation.getCurrentPosition((pos) => {
   userLat = pos.coords.latitude;
   userLon = pos.coords.longitude;
@@ -90,7 +61,7 @@ navigator.geolocation.getCurrentPosition((pos) => {
   loadData();
 });
 
-// 📏 hitung jarak (km)
+// hitung jarak KM
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2-lat1) * Math.PI/180;
@@ -98,13 +69,13 @@ function getDistance(lat1, lon1, lat2, lon2) {
 
   const a =
     Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
     Math.sin(dLon/2) * Math.sin(dLon/2);
 
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
-// 🚀 load data
+// load data
 async function loadData() {
   const radius = document.getElementById("radius").value;
 
@@ -130,17 +101,16 @@ async function loadData() {
 
       const layer = L.geoJSON(item.geometry, {
         style: {
-          color: "#1985d2",
+          color: "#1976d2",
           weight: 2,
+          fillColor: "#ff9800",
           fillOpacity: 0.3
         }
       });
 
-      // centroid untuk jarak
       const center = layer.getBounds().getCenter();
       const distance = getDistance(userLat, userLon, center.lat, center.lng).toFixed(2);
 
-      // popup
       layer.bindPopup(`
         <b>${item.nama_kel}</b><br/>
         ${item.nama_kec}<br/>
@@ -148,7 +118,6 @@ async function loadData() {
         📏 ${distance} KM
       `);
 
-      // hover
       layer.on({
         mouseover: e => e.target.setStyle({ fillOpacity: 0.6 }),
         mouseout: e => e.target.setStyle({ fillOpacity: 0.3 }),
@@ -158,7 +127,6 @@ async function loadData() {
       geoLayer.addLayer(layer);
       layerMap[i] = layer;
 
-      // list
       listHTML += `
         <div class="item" onclick="selectItem(${i})" id="item-${i}">
           <b>${item.nama_kel}</b><br/>
@@ -182,20 +150,17 @@ async function loadData() {
   }
 }
 
-// 🎯 pilih item (sync map + list)
+// pilih item
 function selectItem(i) {
   const layer = layerMap[i];
-
   if (!layer) return;
 
-  // reset sebelumnya
   if (activeLayer) {
     activeLayer.setStyle({ fillOpacity: 0.3 });
   }
 
   document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
 
-  // set baru
   layer.setStyle({ fillOpacity: 0.7 });
   layer.openPopup();
   map.fitBounds(layer.getBounds());
@@ -203,6 +168,16 @@ function selectItem(i) {
   document.getElementById(`item-${i}`).classList.add("active");
 
   activeLayer = layer;
+
+  // mobile auto close
+  if (window.innerWidth < 768) {
+    document.getElementById("sidebar").classList.remove("open");
+  }
+}
+
+// toggle sidebar mobile
+function toggleSidebar() {
+  document.getElementById("sidebar").classList.toggle("open");
 }
 </script>
 

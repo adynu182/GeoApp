@@ -17,7 +17,7 @@ const result = await pool.query(`
     nama_kec,
     nama_kab,
     ST_AsGeoJSON(geometry)::json as geometry
-  FROM wilayah_kelurahan
+  FROM pulau_jawa
   WHERE geometry IS NOT NULL
   AND ST_Intersects(
     geometry,

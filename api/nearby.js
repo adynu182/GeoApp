@@ -19,8 +19,11 @@ export default async function handler(req, res) {
         nama_kec,
         nama_kab,
         ST_AsGeoJSON(geometry)::json as geometry
-      FROM pulau_jawa
-      LIMIT 50;
+      FROM pulau_jawa WHERE ST_DWithin(
+      geometry::geography,
+      ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+      $3
+      )
     `);
 
     res.status(200).json(result.rows);

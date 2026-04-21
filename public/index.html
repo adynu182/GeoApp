@@ -43,10 +43,7 @@ navigator.geolocation.getCurrentPosition(async (pos) => {
   let listHTML = "";
 
   data.forEach(item => {
-    const geo = JSON.parse(item.geojson);
-
-    // Tampilkan polygon
-    L.geoJSON(geo).addTo(map);
+    L.geoJSON(item.geometry).addTo(map);
 
     listHTML += `
       <div>

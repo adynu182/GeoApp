@@ -79,7 +79,7 @@ async function loadData() {
     const res = await fetch(`/api/nearby?lat=${userLat}&lon=${userLon}&radius=${radius}`);
     const data = await res.json();
 
-    geoLayer = L.layerGroup();
+    geoLayer = L.featureGroup();
 
     data.forEach(item => {
       const layer = L.geoJSON(item.geometry, {

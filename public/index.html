@@ -8,6 +8,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
   <!-- CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,30 +18,49 @@
 
 <!-- Sidebar -->
 <div id="sidebar">
-  <div id="controls">
-    Radius:
-    <select id="radius">
-      <option value="1000">1 KM</option>
-      <option value="3000">3 KM</option>
-      <option value="5000" selected>5 KM</option>
-      <option value="10000">10 KM</option>
-    </select>
-    <button onclick="loadData()">🔍</button>
+  <div class="mobile-handle" onclick="toggleSidebar()"></div>
+  <div class="sidebar-header">
+    <h1><i class="fas fa-map-location-dot"></i> GeoApp</h1>
+    <div id="controls">
+      <select id="radius">
+        <option value="1000">1 KM Radius</option>
+        <option value="3000">3 KM Radius</option>
+        <option value="5000" selected>5 KM Radius</option>
+        <option value="10000">10 KM Radius</option>
+      </select>
+      <button onclick="loadData()"><i class="fas fa-search"></i></button>
+    </div>
+  </div>
+
+  <div class="loader-container" id="loader">
+    <div class="spinner"></div>
+    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">Mencari wilayah...</p>
   </div>
 
   <div id="list"></div>
 </div>
 
 <!-- Toggle (mobile) -->
-<div id="toggleBtn" onclick="toggleSidebar()">⬆️ List</div>
+<button id="toggleBtn" onclick="toggleSidebar()"><i class="fas fa-list"></i></button>
 
 <!-- Map -->
 <div id="map"></div>
 
 <script>
-const map = L.map('map').setView([-6.2, 106.8], 12);
+const map = L.map('map', {
+  zoomControl: false
+}).setView([-6.2, 106.8], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// Professional minimal tiles
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 20
+}).addTo(map);
+
+L.control.zoom({
+  position: 'bottomright'
+}).addTo(map);
 
 let userLat, userLon;
 let userMarker;
@@ -59,6 +81,12 @@ navigator.geolocation.getCurrentPosition((pos) => {
     .openPopup();
 
   loadData();
+}, (err) => {
+  console.error("Geolocation error:", err);
+  alert("Gagal mengakses lokasi. Menggunakan lokasi default.");
+  userLat = -6.2;
+  userLon = 106.8;
+  loadData();
 });
 
 // hitung jarak KM
@@ -78,8 +106,14 @@ function getDistance(lat1, lon1, lat2, lon2) {
 // load data
 async function loadData() {
   const radius = document.getElementById("radius").value;
+  const loader = document.getElementById("loader");
+  const listContainer = document.getElementById("list");
 
   if (!userLat) return alert("Lokasi belum siap");
+
+  // Show loader
+  loader.style.display = "block";
+  listContainer.innerHTML = "";
 
   if (geoLayer) map.removeLayer(geoLayer);
 
@@ -87,8 +121,15 @@ async function loadData() {
     const res = await fetch(`/api/nearby?lat=${userLat}&lon=${userLon}&radius=${radius}`);
     const data = await res.json();
 
+    loader.style.display = "none";
+
     if (!Array.isArray(data)) {
       alert("API Error");
+      return;
+    }
+
+    if (data.length === 0) {
+      listContainer.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Tidak ada data ditemukan.</div>';
       return;
     }
 
@@ -101,10 +142,10 @@ async function loadData() {
 
       const layer = L.geoJSON(item.geometry, {
         style: {
-          color: "#1976d2",
+          color: "#2563eb",
           weight: 2,
-          fillColor: "#ff9800",
-          fillOpacity: 0.3
+          fillColor: "#3b82f6",
+          fillOpacity: 0.2
         }
       });
 
@@ -112,15 +153,22 @@ async function loadData() {
       const distance = getDistance(userLat, userLon, center.lat, center.lng).toFixed(2);
 
       layer.bindPopup(`
-        <b>${item.nama_kel}</b><br/>
-        ${item.nama_kec}<br/>
-        ${item.nama_kab}<br/>
-        📏 ${distance} KM
+        <div class="popup-content">
+          <b>${item.nama_kel}</b><br/>
+          <span style="font-size: 0.8rem; color: #64748b;">${item.nama_kec}, ${item.nama_kab}</span><br/>
+          <div style="margin-top: 8px; font-weight: 600; color: #2563eb;">
+            <i class="fas fa-route"></i> ${distance} KM
+          </div>
+        </div>
       `);
 
       layer.on({
-        mouseover: e => e.target.setStyle({ fillOpacity: 0.6 }),
-        mouseout: e => e.target.setStyle({ fillOpacity: 0.3 }),
+        mouseover: e => e.target.setStyle({ fillOpacity: 0.5 }),
+        mouseout: e => {
+          if (activeLayer !== e.target) {
+            e.target.setStyle({ fillOpacity: 0.2 });
+          }
+        },
         click: () => selectItem(i)
       });
 
@@ -129,22 +177,24 @@ async function loadData() {
 
       listHTML += `
         <div class="item" onclick="selectItem(${i})" id="item-${i}">
-          <b>${item.nama_kel}</b><br/>
-          ${item.nama_kec}<br/>
-          <small>📏 ${distance} KM</small>
+          <b>${item.nama_kel}</b>
+          <div class="location-info">${item.nama_kec}, ${item.nama_kab}</div>
+          <div class="distance">
+            <i class="fas fa-location-arrow" style="font-size: 0.7rem;"></i> ${distance} KM
+          </div>
         </div>
       `;
     });
 
-    document.getElementById("list").innerHTML = listHTML;
-
+    listContainer.innerHTML = listHTML;
     geoLayer.addTo(map);
 
     if (geoLayer.getLayers().length > 0) {
-      map.fitBounds(geoLayer.getBounds());
+      map.fitBounds(geoLayer.getBounds(), { padding: [20, 20] });
     }
 
   } catch (err) {
+    loader.style.display = "none";
     console.error(err);
     alert("Gagal Load Data");
   }
@@ -156,22 +206,24 @@ function selectItem(i) {
   if (!layer) return;
 
   if (activeLayer) {
-    activeLayer.setStyle({ fillOpacity: 0.3 });
+    activeLayer.setStyle({ fillOpacity: 0.2, weight: 2 });
   }
 
   document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
 
-  layer.setStyle({ fillOpacity: 0.7 });
+  layer.setStyle({ fillOpacity: 0.5, weight: 3 });
   layer.openPopup();
-  map.fitBounds(layer.getBounds());
+  map.fitBounds(layer.getBounds(), { padding: [50, 50] });
 
-  document.getElementById(`item-${i}`).classList.add("active");
+  const itemEl = document.getElementById(`item-${i}`);
+  itemEl.classList.add("active");
+  itemEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   activeLayer = layer;
 
   // mobile auto close
   if (window.innerWidth < 768) {
-    document.getElementById("sidebar").classList.remove("open");
+    // document.getElementById("sidebar").classList.remove("open");
   }
 }
 

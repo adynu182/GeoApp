@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GeoApp Super - Peta Pintar</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Floating Header -->
+<div class="floating-panel">
+  <div class="chip-group">
+    <div class="chip active" onclick="switchMode('nearby')" id="chip-nearby">
+      <i class="fas fa-location-crosshairs"></i> Sekitar
+    </div>
+    <div class="chip" onclick="switchMode('filter')" id="chip-filter">
+      <i class="fas fa-filter"></i> Filter
+    </div>
+    <div class="chip" onclick="switchMode('search')" id="chip-search">
+      <i class="fas fa-search"></i> Cari
+    </div>
+  </div>
+
+  <div class="input-container">
+    <!-- Nearby Input -->
+    <div class="search-box" id="input-nearby">
+      <i class="fas fa-compass" style="color: var(--primary)"></i>
+      <select id="radius-select">
+        <option value="1000">Radius 1 KM</option>
+        <option value="3000">Radius 3 KM</option>
+        <option value="5000" selected>Radius 5 KM</option>
+        <option value="10000">Radius 10 KM</option>
+      </select>
+    </div>
+
+    <!-- Filter Input (Hidden) -->
+    <div class="search-box" id="input-filter" style="display: none;">
+      <i class="fas fa-map-marked-alt" style="color: var(--primary)"></i>
+      <select id="kecamatan-select">
+        <option value="">Pilih Kecamatan...</option>
+      </select>
+    </div>
+
+    <!-- Search Input (Hidden) -->
+    <div class="search-box" id="input-search" style="display: none;">
+      <i class="fas fa-search" style="color: var(--primary)"></i>
+      <input type="text" id="search-q" placeholder="Cari kelurahan/kec/kab..." onkeyup="if(event.key==='Enter') executeAction()">
+    </div>
+
+    <button id="action-btn" onclick="executeAction()" style="width: 48px; height: 48px; border-radius: 12px; padding: 0;">
+      <i class="fas fa-arrow-right"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Bottom Sheet -->
+<div class="bottom-sheet" id="bottomSheet">
+  <div class="sheet-handle" onclick="toggleSheet()"></div>
+  <div class="sheet-content">
+    <div class="sheet-title">
+      <span id="result-count">Tarik untuk hasil</span>
+      <i class="fas fa-chevron-up" id="sheet-icon" style="font-size: 0.8rem; color: var(--text-muted)"></i>
+    </div>
+    
+    <div id="loader" class="loader-container" style="padding: 10px 0;">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="list-results">
+      <div style="text-align:center; padding: 40px 20px; color: var(--text-muted);">
+        <i class="fas fa-map-pin" style="font-size: 2rem; margin-bottom: 12px; opacity: 0.3;"></i><br/>
+        Pilih mode dan klik panah untuk memulai.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- MAP SETUP ---
+const map = L.map('map', { zoomControl: false }).setView([-6.2, 106.8], 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 20
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+let geoLayer, activeLayer, currentMode = 'nearby';
+let userLat, userLon;
+
+// --- INITIALIZATION ---
+async function init() {
+  // Get location for Nearby
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    map.setView([userLat, userLon], 14);
+    L.marker([userLat, userLon]).addTo(map).bindPopup("Lokasi Kamu");
+  });
+
+  // Load Kecamatan for Filter
+  try {
+    const res = await fetch('/api/list-kecamatan');
+    const data = await res.json();
+    const select = document.getElementById("kecamatan-select");
+    data.forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.nama_kec;
+      opt.textContent = item.nama_kec;
+      select.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+// --- CORE LOGIC ---
+function switchMode(mode) {
+  currentMode = mode;
+  // Update Chips
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.getElementById(`chip-${mode}`).classList.add('active');
+
+  // Update Inputs
+  ['nearby', 'filter', 'search'].forEach(m => {
+    document.getElementById(`input-${m}`).style.display = (m === mode) ? 'flex' : 'none';
+  });
+
+  // Update Button Icon
+  const btnIcon = document.querySelector('#action-btn i');
+  btnIcon.className = (mode === 'nearby') ? 'fas fa-location-arrow' : 'fas fa-arrow-right';
+}
+
+function toggleSheet() {
+  const sheet = document.getElementById('bottomSheet');
+  const icon = document.getElementById('sheet-icon');
+  if (sheet.classList.contains('expanded')) {
+    sheet.classList.remove('expanded');
+    icon.className = 'fas fa-chevron-up';
+  } else {
+    sheet.classList.add('expanded');
+    icon.className = 'fas fa-chevron-down';
+  }
+}
+
+function expandSheet() {
+  document.getElementById('bottomSheet').classList.add('expanded');
+  document.getElementById('sheet-icon').className = 'fas fa-chevron-down';
+}
+
+async function executeAction() {
+  const loader = document.getElementById("loader");
+  const list = document.getElementById("list-results");
+  const countText = document.getElementById("result-count");
+
+  loader.style.display = "block";
+  list.innerHTML = "";
+  if (geoLayer) map.removeLayer(geoLayer);
+
+  let url = '';
+  if (currentMode === 'nearby') {
+    if (!userLat) return alert("Menunggu lokasi...");
+    const rad = document.getElementById("radius-select").value;
+    url = `/api/nearby?lat=${userLat}&lon=${userLon}&radius=${rad}`;
+  } else if (currentMode === 'filter') {
+    const kec = document.getElementById("kecamatan-select").value;
+    if (!kec) return alert("Pilih kecamatan!");
+    url = `/api/list-kelurahan?kecamatan=${encodeURIComponent(kec)}`;
+  } else {
+    const q = document.getElementById("search-q").value;
+    if (q.length < 3) return alert("Minimal 3 karakter!");
+    url = `/api/search?q=${encodeURIComponent(q)}`;
+  }
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    loader.style.display = "none";
+
+    if (!Array.isArray(data) || data.length === 0) {
+      list.innerHTML = '<div style="text-align:center; padding:20px;">Tidak ditemukan.</div>';
+      countText.innerText = "0 Hasil ditemukan";
+      return;
+    }
+
+    countText.innerText = `${data.length} Wilayah ditemukan`;
+    renderResults(data);
+    expandSheet();
+  } catch (e) {
+    loader.style.display = "none";
+    alert("Error fetching data");
+  }
+}
+
+function renderResults(data) {
+  const list = document.getElementById("list-results");
+  geoLayer = L.featureGroup();
+  let html = '';
+
+  data.forEach((item, i) => {
+    const layer = L.geoJSON(item.geometry, {
+      style: { color: "#2563eb", weight: 2, fillColor: "#3b82f6", fillOpacity: 0.1 }
+    });
+
+    layer.bindPopup(`<b>${item.nama_kel}</b><br>${item.nama_kec}`);
+    layer.on('click', () => selectItem(i, layer));
+    geoLayer.addLayer(layer);
+
+    html += `
+      <div class="compact-item" onclick="handleItemClick(${i})" id="item-${i}">
+        <div class="icon"><i class="fas fa-map-marker-alt"></i></div>
+        <div class="info">
+          <b>${item.nama_kel}</b>
+          <span>${item.nama_kec}, ${item.nama_kab}</span>
+        </div>
+        <i class="fas fa-chevron-right" style="color: #e2e8f0; font-size: 0.8rem;"></i>
+      </div>
+    `;
+  });
+
+  list.innerHTML = html;
+  geoLayer.addTo(map);
+  if (geoLayer.getLayers().length > 0) {
+    map.fitBounds(geoLayer.getBounds(), { padding: [40, 40] });
+  }
+}
+
+function handleItemClick(i) {
+  const layers = geoLayer.getLayers();
+  selectItem(i, layers[i]);
+}
+
+function selectItem(i, layer) {
+  if (activeLayer) activeLayer.setStyle({ fillOpacity: 0.1, weight: 2 });
+  
+  layer.setStyle({ fillOpacity: 0.4, weight: 3 });
+  layer.openPopup();
+  map.fitBounds(layer.getBounds(), { padding: [80, 80] });
+
+  document.querySelectorAll('.compact-item').forEach(el => el.style.background = 'transparent');
+  const el = document.getElementById(`item-${i}`);
+  if (el) {
+    el.style.background = '#f1f5f9';
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  
+  activeLayer = layer;
+  // Minimize sheet to see map
+  const sheet = document.getElementById('bottomSheet');
+  if (window.innerWidth < 768) {
+    sheet.classList.remove('expanded');
+    document.getElementById('sheet-icon').className = 'fas fa-chevron-up';
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

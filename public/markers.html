@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Marker Manager - GeoApp</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -16,56 +16,91 @@
   
   <style>
     .marker-form {
-      padding: 15px;
+      padding: 16px;
       background: var(--bg-main);
-      border-radius: 12px;
+      border-radius: 16px;
       margin-bottom: 20px;
       border: 1px solid var(--border);
     }
     .form-group {
-      margin-bottom: 12px;
+      margin-bottom: 16px;
     }
     .form-group label {
       display: block;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       font-weight: 600;
       color: var(--text-muted);
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
     .form-group input, .form-group select, .form-group textarea {
       width: 100%;
-      padding: 8px 12px;
+      padding: 10px 14px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 10px;
       font-family: inherit;
+      font-size: 0.95rem;
       box-sizing: border-box;
+      background: var(--surface);
     }
     .auto-info {
-      background: #f1f5f9;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 0.75rem;
+      background: #eff6ff;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 0.8rem;
       color: var(--text-muted);
-      margin-top: 10px;
+      margin-bottom: 16px;
+      border: 1px solid #dbeafe;
     }
-    .auto-info b { color: var(--text-main); }
+    .auto-info b { color: var(--primary); }
+    
+    hr {
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+
+    .sheet-content {
+      padding-top: 8px;
+    }
   </style>
 </head>
 <body>
 
-<div id="sidebar">
-  <div class="mobile-handle" onclick="toggleSidebar()"></div>
-  <div class="sidebar-header">
-    <h1><i class="fas fa-map-pin"></i> Marker Manager</h1>
-    
-    <div class="nav-menu">
-      <a href="index.html" class="nav-link"><i class="fas fa-location-dot"></i> Sekitar</a>
-      <a href="filter.html" class="nav-link"><i class="fas fa-filter"></i> Filter</a>
-      <a href="search.html" class="nav-link"><i class="fas fa-search"></i> Cari</a>
-      <a href="markers.html" class="nav-link active"><i class="fas fa-map-pin"></i> Marker</a>
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Floating Header -->
+<div class="floating-panel">
+  <div class="chip-group">
+    <div class="chip" onclick="location.href='index.html'">
+      <i class="fas fa-location-crosshairs"></i> Sekitar
+    </div>
+    <div class="chip" onclick="location.href='index.html'">
+      <i class="fas fa-filter"></i> Filter
+    </div>
+    <div class="chip" onclick="location.href='index.html'">
+      <i class="fas fa-search"></i> Cari
+    </div>
+    <div class="chip active">
+      <i class="fas fa-map-pin"></i> Marker
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Sheet -->
+<div class="bottom-sheet" id="bottomSheet">
+  <div class="sheet-handle" onclick="toggleSheet()"></div>
+  <div class="sheet-content">
+    <div class="sheet-title">
+      <span>Tambah Marker Baru</span>
+      <i class="fas fa-chevron-up" id="sheet-icon" style="font-size: 0.8rem; color: var(--text-muted)"></i>
     </div>
 
     <div class="marker-form">
+      <div id="location-status" class="auto-info">
+        <i class="fas fa-sync fa-spin"></i> Mendeteksi lokasi...
+      </div>
+
       <div class="form-group">
         <label>Nama Marker</label>
         <input type="text" id="m-name" placeholder="Contoh: Kantor Desa">
@@ -84,25 +119,24 @@
         <textarea id="m-desc" rows="2" placeholder="Keterangan singkat..."></textarea>
       </div>
       
-      <div id="location-status" class="auto-info">
-        <i class="fas fa-sync fa-spin"></i> Mendeteksi lokasi...
-      </div>
-
-      <button onclick="saveMarker()" id="save-btn" style="width: 100%; margin-top: 10px;">
-        <i class="fas fa-save"></i> Simpan Marker
+      <button id="save-btn" style="width: 100%; height: 48px; border-radius: 12px;">
+        <i class="fas fa-save" style="margin-right: 8px;"></i> Simpan Marker
       </button>
     </div>
-  </div>
 
-  <div id="list">
-    <div class="loader-container" id="loader">
-      <div class="spinner"></div>
+    <hr>
+
+    <div class="sheet-title">
+      <span>Daftar Marker Tersimpan</span>
+    </div>
+
+    <div id="list">
+      <div class="loader-container" id="loader" style="display: block;">
+        <div class="spinner"></div>
+      </div>
     </div>
   </div>
 </div>
-
-<button id="toggleBtn" onclick="toggleSidebar()"><i class="fas fa-list"></i></button>
-<div id="map"></div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -119,6 +153,24 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+
+  // --- UI LOGIC ---
+  window.toggleSheet = function() {
+    const sheet = document.getElementById('bottomSheet');
+    const icon = document.getElementById('sheet-icon');
+    if (sheet.classList.contains('expanded')) {
+      sheet.classList.remove('expanded');
+      icon.className = 'fas fa-chevron-up';
+    } else {
+      sheet.classList.add('expanded');
+      icon.className = 'fas fa-chevron-down';
+    }
+  };
+
+  window.expandSheet = function() {
+    document.getElementById('bottomSheet').classList.add('expanded');
+    document.getElementById('sheet-icon').className = 'fas fa-chevron-down';
+  };
 
   // --- MAP SETUP ---
   const map = L.map('map', { zoomControl: false }).setView([-6.2, 106.8], 12);
@@ -166,7 +218,7 @@
         currentPos.kab = data.nama_kab;
         statusEl.innerHTML = `
           📍 <b>${data.nama_kel}</b>, ${data.nama_kec}<br/>
-          <span style="font-size:0.7rem">Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}</span>
+          <span style="font-size:0.75rem; color: var(--text-muted)">Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}</span>
         `;
       } else {
         statusEl.innerHTML = "Wilayah di luar cakupan data";
@@ -177,7 +229,7 @@
   }
 
   // --- FIREBASE OPS ---
-  window.saveMarker = async () => {
+  document.getElementById('save-btn').onclick = async () => {
     const name = document.getElementById('m-name').value;
     const category = document.getElementById('m-category').value;
     const desc = document.getElementById('m-desc').value;
@@ -223,32 +275,42 @@
     snapshot.forEach((doc) => {
       const data = doc.data();
       const div = document.createElement('div');
-      div.className = 'item';
+      div.className = 'compact-item';
+      div.style.cursor = 'pointer';
       div.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start">
+        <div class="icon"><i class="fas fa-map-pin"></i></div>
+        <div class="info">
           <b>${data.name}</b>
-          <span class="distance" style="background:#e0f2fe; color:#0369a1; font-size:0.65rem">${data.category}</span>
+          <span>${data.kelurahan}, ${data.kecamatan}</span>
+          <div style="font-size:0.75rem; color: var(--primary); font-weight: 600; margin-top: 2px;">${data.category}</div>
         </div>
-        <div class="location-info">${data.kelurahan}, ${data.kecamatan}</div>
-        <div style="font-size:0.8rem; margin-top:5px; color:var(--text-main)">${data.description || ''}</div>
+        <i class="fas fa-chevron-right" style="color: var(--border); font-size: 0.8rem;"></i>
       `;
       div.onclick = () => {
         map.setView([data.lat, data.lon], 17);
         L.marker([data.lat, data.lon]).addTo(map)
-          .bindPopup(`<b>${data.name}</b><br>${data.description}`)
+          .bindPopup(`<b>${data.name}</b><br>${data.description || ''}`)
           .openPopup();
+        
+        // Minimize sheet to see map
+        if (window.innerWidth < 768) {
+          const sheet = document.getElementById('bottomSheet');
+          sheet.classList.remove('expanded');
+          document.getElementById('sheet-icon').className = 'fas fa-chevron-up';
+        }
       };
       listContainer.appendChild(div);
     });
 
     if (snapshot.empty) {
-      listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted)">Belum ada marker tersimpan.</div>';
+      listContainer.innerHTML = '<div style="text-align:center; padding:40px 20px; color:var(--text-muted)">Belum ada marker tersimpan.</div>';
     }
   });
 
-  window.toggleSidebar = () => {
-    document.getElementById("sidebar").classList.toggle("open");
-  };
+  // Initial expand to show form
+  setTimeout(() => {
+    expandSheet();
+  }, 500);
 </script>
 
 </body>

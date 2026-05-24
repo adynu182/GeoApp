@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Peta Wilayah Sekitar</title>
+  <title>Filter Wilayah - GeoApp</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Leaflet -->
@@ -20,32 +20,34 @@
 <div id="sidebar">
   <div class="mobile-handle" onclick="toggleSidebar()"></div>
   <div class="sidebar-header">
-    <h1><i class="fas fa-map-location-dot"></i> GeoApp</h1>
-    
+    <h1><i class="fas fa-filter"></i> Filter Wilayah</h1>
+
     <div class="nav-menu">
-      <a href="index.html" class="nav-link active"><i class="fas fa-location-dot"></i> Sekitar</a>
-      <a href="filter.html" class="nav-link"><i class="fas fa-filter"></i> Filter</a>
+      <a href="index.html" class="nav-link"><i class="fas fa-location-dot"></i> Sekitar</a>
+      <a href="filter.html" class="nav-link active"><i class="fas fa-filter"></i> Filter</a>
       <a href="search.html" class="nav-link"><i class="fas fa-search"></i> Cari</a>
       <a href="markers.html" class="nav-link"><i class="fas fa-map-pin"></i> Marker</a>
     </div>
 
-    <div id="controls">
-      <select id="radius">
-        <option value="1000">1 KM Radius</option>
-        <option value="3000">3 KM Radius</option>
-        <option value="5000" selected>5 KM Radius</option>
-        <option value="10000">10 KM Radius</option>
+    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 15px;">Pilih kecamatan untuk melihat kelurahan</p>
+    
+    <div id="controls" style="flex-direction: column; align-items: stretch; gap: 10px;">
+      <select id="kecamatan-select" onchange="onKecamatanChange()">
+        <option value="">-- Pilih Kecamatan --</option>
       </select>
-      <button onclick="loadData()"><i class="fas fa-search"></i></button>
     </div>
   </div>
 
   <div class="loader-container" id="loader">
     <div class="spinner"></div>
-    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">Mencari wilayah...</p>
+    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">Memuat data...</p>
   </div>
 
-  <div id="list"></div>
+  <div id="list">
+    <div style="text-align:center; padding: 20px; color: var(--text-muted);">
+      Silakan pilih kecamatan terlebih dahulu.
+    </div>
+  </div>
 </div>
 
 <!-- Toggle (mobile) -->
@@ -59,9 +61,9 @@ const map = L.map('map', {
   zoomControl: false
 }).setView([-6.2, 106.8], 12);
 
-// Professional minimal tiles
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+// Tiles
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
   subdomains: 'abcd',
   maxZoom: 20
 }).addTo(map);
@@ -70,103 +72,69 @@ L.control.zoom({
   position: 'bottomright'
 }).addTo(map);
 
-let userLat, userLon;
-let userMarker;
 let geoLayer;
 let layerMap = {};
 let activeLayer = null;
 
-// ambil lokasi user
-navigator.geolocation.getCurrentPosition((pos) => {
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
-
-  map.setView([userLat, userLon], 14);
-
-  userMarker = L.marker([userLat, userLon])
-    .addTo(map)
-    .bindPopup("📍 Lokasi Kamu")
-    .openPopup();
-
-  loadData();
-}, (err) => {
-  console.error("Geolocation error:", err);
-  alert("Gagal mengakses lokasi. Menggunakan lokasi default.");
-  userLat = -6.2;
-  userLon = 106.8;
-  loadData();
-});
-
-// hitung jarak KM
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
-
-  const a =
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+// Load initial kecamatan list
+async function init() {
+  const select = document.getElementById("kecamatan-select");
+  try {
+    const res = await fetch('/api/list-kecamatan');
+    const data = await res.json();
+    
+    data.forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.nama_kec;
+      opt.textContent = item.nama_kec;
+      select.appendChild(opt);
+    });
+  } catch (err) {
+    console.error("Gagal memuat kecamatan:", err);
+  }
 }
 
-// load data
-async function loadData() {
-  const radius = document.getElementById("radius").value;
+async function onKecamatanChange() {
+  const kec = document.getElementById("kecamatan-select").value;
+  if (!kec) return;
+
   const loader = document.getElementById("loader");
   const listContainer = document.getElementById("list");
 
-  if (!userLat) return alert("Lokasi belum siap");
-
-  // Show loader
   loader.style.display = "block";
   listContainer.innerHTML = "";
 
   if (geoLayer) map.removeLayer(geoLayer);
 
   try {
-    const res = await fetch(`/api/nearby?lat=${userLat}&lon=${userLon}&radius=${radius}`);
+    const res = await fetch(`/api/list-kelurahan?kecamatan=${encodeURIComponent(kec)}`);
     const data = await res.json();
 
     loader.style.display = "none";
 
-    if (!Array.isArray(data)) {
-      alert("API Error");
-      return;
-    }
-
     if (data.length === 0) {
-      listContainer.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Tidak ada data ditemukan.</div>';
+      listContainer.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Tidak ada data kelurahan.</div>';
       return;
     }
 
     geoLayer = L.featureGroup();
     layerMap = {};
-
     let listHTML = "";
 
     data.forEach((item, i) => {
-
       const layer = L.geoJSON(item.geometry, {
         style: {
-          color: "#2563eb",
+          color: "#059669",
           weight: 2,
-          fillColor: "#3b82f6",
+          fillColor: "#10b981",
           fillOpacity: 0.2
         }
       });
 
-      const center = layer.getBounds().getCenter();
-      const distance = getDistance(userLat, userLon, center.lat, center.lng).toFixed(2);
-
       layer.bindPopup(`
         <div class="popup-content">
           <b>${item.nama_kel}</b><br/>
-          <span style="font-size: 0.8rem; color: #64748b;">${item.nama_kec}, ${item.nama_kab}</span><br/>
-          <div style="margin-top: 8px; font-weight: 600; color: #2563eb;">
-            <i class="fas fa-route"></i> ${distance} KM
-          </div>
+          <span style="font-size: 0.8rem; color: #64748b;">Kec. ${item.nama_kec}</span>
         </div>
       `);
 
@@ -186,10 +154,7 @@ async function loadData() {
       listHTML += `
         <div class="item" onclick="selectItem(${i})" id="item-${i}">
           <b>${item.nama_kel}</b>
-          <div class="location-info">${item.nama_kec}, ${item.nama_kab}</div>
-          <div class="distance">
-            <i class="fas fa-location-arrow" style="font-size: 0.7rem;"></i> ${distance} KM
-          </div>
+          <div class="location-info">Kelurahan di Kec. ${item.nama_kec}</div>
         </div>
       `;
     });
@@ -204,11 +169,10 @@ async function loadData() {
   } catch (err) {
     loader.style.display = "none";
     console.error(err);
-    alert("Gagal Load Data");
+    alert("Gagal memuat data kelurahan");
   }
 }
 
-// pilih item
 function selectItem(i) {
   const layer = layerMap[i];
   if (!layer) return;
@@ -228,17 +192,13 @@ function selectItem(i) {
   itemEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   activeLayer = layer;
-
-  // mobile auto close
-  if (window.innerWidth < 768) {
-    // document.getElementById("sidebar").classList.remove("open");
-  }
 }
 
-// toggle sidebar mobile
 function toggleSidebar() {
   document.getElementById("sidebar").classList.toggle("open");
 }
+
+init();
 </script>
 
 </body>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Marker Manager - GeoApp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+  
+  <style>
+    .marker-form {
+      padding: 15px;
+      background: var(--bg-main);
+      border-radius: 12px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .auto-info {
+      background: #f1f5f9;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 10px;
+    }
+    .auto-info b { color: var(--text-main); }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="mobile-handle" onclick="toggleSidebar()"></div>
+  <div class="sidebar-header">
+    <h1><i class="fas fa-map-pin"></i> Marker Manager</h1>
+    
+    <div class="nav-menu">
+      <a href="index.html" class="nav-link"><i class="fas fa-location-dot"></i> Sekitar</a>
+      <a href="filter.html" class="nav-link"><i class="fas fa-filter"></i> Filter</a>
+      <a href="search.html" class="nav-link"><i class="fas fa-search"></i> Cari</a>
+      <a href="markers.html" class="nav-link active"><i class="fas fa-map-pin"></i> Marker</a>
+    </div>
+
+    <div class="marker-form">
+      <div class="form-group">
+        <label>Nama Marker</label>
+        <input type="text" id="m-name" placeholder="Contoh: Kantor Desa">
+      </div>
+      <div class="form-group">
+        <label>Kategori</label>
+        <select id="m-category">
+          <option value="Fasilitas Umum">Fasilitas Umum</option>
+          <option value="Bisnis">Bisnis</option>
+          <option value="Wisata">Wisata</option>
+          <option value="Lainnya">Lainnya</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Deskripsi</label>
+        <textarea id="m-desc" rows="2" placeholder="Keterangan singkat..."></textarea>
+      </div>
+      
+      <div id="location-status" class="auto-info">
+        <i class="fas fa-sync fa-spin"></i> Mendeteksi lokasi...
+      </div>
+
+      <button onclick="saveMarker()" id="save-btn" style="width: 100%; margin-top: 10px;">
+        <i class="fas fa-save"></i> Simpan Marker
+      </button>
+    </div>
+  </div>
+
+  <div id="list">
+    <div class="loader-container" id="loader">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<button id="toggleBtn" onclick="toggleSidebar()"><i class="fas fa-list"></i></button>
+<div id="map"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyB0pZijSo-v2w-VCmrORb9CowMCBQ6-ws0",
+    authDomain: "geo-app-fd860.firebaseapp.com",
+    projectId: "geo-app-fd860",
+    storageBucket: "geo-app-fd860.firebasestorage.app",
+    messagingSenderId: "469722777353",
+    appId: "1:469722777353:web:e83f3e2871be2caf0335d8"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // --- MAP SETUP ---
+  const map = L.map('map', { zoomControl: false }).setView([-6.2, 106.8], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; CARTO'
+  }).addTo(map);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  let currentPos = null;
+  let tempMarker = null;
+
+  // --- LOCATION DETECTION ---
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    currentPos = { lat: latitude, lon: longitude };
+    map.setView([latitude, longitude], 15);
+    
+    if (tempMarker) map.removeLayer(tempMarker);
+    tempMarker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
+    tempMarker.bindPopup("Geser marker untuk lokasi tepat").openPopup();
+
+    await updateRegionInfo(latitude, longitude);
+
+    tempMarker.on('dragend', async (e) => {
+      const { lat, lng } = e.target.getLatLng();
+      currentPos = { lat, lon: lng };
+      await updateRegionInfo(lat, lng);
+    });
+
+  }, (err) => {
+    document.getElementById('location-status').innerHTML = "Gagal deteksi GPS";
+  });
+
+  async function updateRegionInfo(lat, lon) {
+    const statusEl = document.getElementById('location-status');
+    statusEl.innerHTML = '<i class="fas fa-sync fa-spin"></i> Mencari wilayah...';
+    
+    try {
+      const res = await fetch(`/api/get-region?lat=${lat}&lon=${lon}`);
+      const data = await res.json();
+      
+      if (data.nama_kel) {
+        currentPos.kel = data.nama_kel;
+        currentPos.kec = data.nama_kec;
+        currentPos.kab = data.nama_kab;
+        statusEl.innerHTML = `
+          📍 <b>${data.nama_kel}</b>, ${data.nama_kec}<br/>
+          <span style="font-size:0.7rem">Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}</span>
+        `;
+      } else {
+        statusEl.innerHTML = "Wilayah di luar cakupan data";
+      }
+    } catch (e) {
+      statusEl.innerHTML = "Gagal mengambil data wilayah";
+    }
+  }
+
+  // --- FIREBASE OPS ---
+  window.saveMarker = async () => {
+    const name = document.getElementById('m-name').value;
+    const category = document.getElementById('m-category').value;
+    const desc = document.getElementById('m-desc').value;
+
+    if (!name) return alert("Isi nama marker!");
+    if (!currentPos || !currentPos.kel) return alert("Lokasi belum terdeteksi!");
+
+    const saveBtn = document.getElementById('save-btn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+    try {
+      await addDoc(collection(db, "markers"), {
+        name,
+        category,
+        description: desc,
+        lat: currentPos.lat,
+        lon: currentPos.lon,
+        kelurahan: currentPos.kel,
+        kecamatan: currentPos.kec,
+        kabupaten: currentPos.kab,
+        createdAt: new Date()
+      });
+
+      document.getElementById('m-name').value = '';
+      document.getElementById('m-desc').value = '';
+      alert("Marker berhasil disimpan!");
+    } catch (e) {
+      console.error(e);
+      alert("Gagal menyimpan ke Firebase");
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fas fa-save"></i> Simpan Marker';
+    }
+  };
+
+  // Listen for markers
+  const q = query(collection(db, "markers"), orderBy("createdAt", "desc"));
+  onSnapshot(q, (snapshot) => {
+    const listContainer = document.getElementById('list');
+    listContainer.innerHTML = '';
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start">
+          <b>${data.name}</b>
+          <span class="distance" style="background:#e0f2fe; color:#0369a1; font-size:0.65rem">${data.category}</span>
+        </div>
+        <div class="location-info">${data.kelurahan}, ${data.kecamatan}</div>
+        <div style="font-size:0.8rem; margin-top:5px; color:var(--text-main)">${data.description || ''}</div>
+      `;
+      div.onclick = () => {
+        map.setView([data.lat, data.lon], 17);
+        L.marker([data.lat, data.lon]).addTo(map)
+          .bindPopup(`<b>${data.name}</b><br>${data.description}`)
+          .openPopup();
+      };
+      listContainer.appendChild(div);
+    });
+
+    if (snapshot.empty) {
+      listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted)">Belum ada marker tersimpan.</div>';
+    }
+  });
+
+  window.toggleSidebar = () => {
+    document.getElementById("sidebar").classList.toggle("open");
+  };
+</script>
+
+</body>
+</html>
